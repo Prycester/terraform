@@ -74,8 +74,8 @@ resource "aws_route_table_association" "a" {
   route_table_id = aws_route_table.tf-r.id
 }
 
-resource "aws_key_pair" "tf-key" {
-  key_name   = "tf-key"
+resource "aws_key_pair" "terr-key" {
+  key_name   = "terr-key"
   public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC8NGaey9qYzCQ5fN5oqdChcQx9cCCPMVw93JwM7P7EQFXlPQrRg78miQPdft0bhPJPMfudzv0DFM3WC43W4iE1ezh1gpto+R53r+gFTUubLKGtetrpqdjLpUONc1z+1Qvnh9aRkn8WnOt9uZKDh0QLaFO7sPmBDV2URq1JI6f5Voz6VyTwIaek2jNkP9lEj73Ffiuj6Z5TYpMv5ZhYky3RUviozVnaDpFKTba3VRoRZOuPP31Ze0Rn7J/OafhpVpy9Qbjg0hjDTQq4U873Ycfnwr5RijyDb3N+oiEwWYEJ04z0NMlEba1DT2xuDV9DF+klAQvzlRzUng9lS5EUQmOswHXhHgxFVEfldOHeWONmIXiQt1rbusugDInFWyDVEcHY5GOsP09KIrsvrjNNCufbKYO8zuqq06amiFxYyyH3fW3SibK80e6C+/4SscMjkBzIG9z5Z5s7vHP70t76/dw7bn8s002RpWZYGoRAj5s4rxiKnUIdOrL1e4V05pdc7PM= pryce@dhcp"
 }
 
