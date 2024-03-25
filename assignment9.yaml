@@ -1,0 +1,75 @@
+---
+- hosts: servers
+  become: yes
+  vars:
+    user_groups:
+      executives:
+        - CEO
+        - CFO
+        - CIO
+      analysts:
+        - FinancialAnalyst1
+        - FinancialAnalyst2
+        - FinancialAnalyst3
+        - FinancialAnalyst4
+        - FinancialAnalyst5
+      administrators:
+        - SysAdmin1
+        - SysAdmin2
+
+    work_directories:
+      executives: /financial/work/executives
+      analysts: /financial/work/analysts
+      administrators: /financial/work/administrators
+
+    password_policy: libpam-pwquality
+
+  tasks:
+    - name: Ensure user groups exist
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ user_groups.keys() }}"
+
+    - name: Create user accounts
+      ansible.builtin.user:
+        name: "{{ item.1 }}"
+        group: "{{ item.0 }}"
+        password: "{{ lookup('password', '/dev/null length=15 chars=ascii_letters,digits,hexdigits,@,%,^,-,_,+') | password_hash('sha512') }}"
+        create_home: yes
+      with_subelements:
+        - "{{ user_groups }}"
+        - 1
+
+    - name: Create work directories for each group
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: root
+        group: "{{ item.key }}"
+        mode: '0770'
+      loop: "{{ work_directories | dict2items }}"
+
+    - name: Apply security settings
+      block:
+        - name: Install libpam-pwquality for enforcing password policies
+          ansible.builtin.package:
+            name: "{{ password_policy }}"
+            state: present
+
+        # Additional tasks for configuring libpam-pwquality, SSH keys etc. go here
+        # This is just a placeholder for actual security implementation
+
+    - name: Ensure SSH key-based authentication for system administrators
+      ansible.builtin.user:
+        name: "{{ item }}"
+        generate_ssh_key: yes
+        ssh_key_bits: 2048
+        ssh_key_file: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC8NGaey9qYzCQ5fN5oqdChcQx9cCCPMVw93JwM7P7EQFXlPQrRg78miQPdft0bhPJPMfudzv0DFM3WC43W4iE1ezh1gpto+R53r+gFTUubLKGtetrpqdjLpUONc1z+1Qvnh9aRkn8WnOt9uZKDh0QLaFO7sPmBDV2URq1JI6f5Voz6VyTwIaek2jNkP9lEj73Ffiuj6Z5TYpMv5ZhYky3RUviozVnaDpFKTba3VRoRZOuPP31Ze0Rn7J/OafhpVpy9Qbjg0hjDTQq4U873Ycfnwr5RijyDb3N+oiEwWYEJ04z0NMlEba1DT2xuDV9DF+klAQvzlRzUng9lS5EUQmOswHXhHgxFVEfldOHeWONmIXiQt1rbusugDInFWyDVEcHY5GOsP09KIrsvrjNNCufbKYO8zuqq06amiFxYyyH3fW3SibK80e6C+/4SscMjkBzIG9z5Z5s7vHP70t76/dw7bn8s002RpWZYGoRAj5s4rxiKnUIdOrL1e4V05pdc7PM= pryce@dhcp"
+      loop: "{{ user_groups.administrators }}"
+
+  handlers:
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted
