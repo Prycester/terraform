@@ -86,4 +86,3 @@ main() {
 # Run the main function
 main
 
-d00468971@ssh:
