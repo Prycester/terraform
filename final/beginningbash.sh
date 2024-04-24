@@ -31,6 +31,22 @@ deploy_cloud_infrastructure() {
     terraform apply -auto-approve
 }
 
+# Function to deploy selected tech stack (PHP or Node.js) and sample application
+deploy_tech_stack() {
+    tech_stack=$1
+    echo "Deploying $tech_stack stack and sample application..."
+
+    # Check if PHP or Node.js is selected and deploy the appropriate stack
+    if [ "$tech_stack" == "PHP" ]; then
+        ansible-playbook deploy_php.yml -i inventory.ini
+    elif [ "$tech_stack" == "Node.js" ]; then
+        ansible-playbook deploy_nodejs.yml -i inventory.ini
+    else
+        echo "Invalid tech stack. Exiting."
+        exit 1
+    fi
+}
+
 # Main function to orchestrate the script
 main() {
     echo "Welcome to the VM provisioning tool. Please follow the prompts."
@@ -42,6 +58,8 @@ main() {
             ;;
         "cloud")
             deploy_cloud_infrastructure
+            tech_stack=$(prompt_for_input "Choose the tech stack (PHP/Node.js): ")
+            deploy_tech_stack "$tech_stack"
             ;;
         *)
             echo "Invalid choice. Exiting."
