@@ -47,6 +47,21 @@ deploy_tech_stack() {
     fi
 }
 
+# Read AWS credentials from the credentials file
+if [ -f ~/.aws/credentials ]; then
+    aws_access_key_id=$(grep -oP '(?<=aws_access_key_id=).*' ~/.aws/credentials)
+    aws_secret_access_key=$(grep -oP '(?<=aws_secret_access_key=).*' ~/.aws/credentials)
+    aws_session_token=$(grep -oP '(?<=aws_session_token=).*' ~/.aws/credentials)
+
+    # Export AWS credentials as environment variables
+    export AWS_ACCESS_KEY_ID="$aws_access_key_id"
+    export AWS_SECRET_ACCESS_KEY="$aws_secret_access_key"
+    export AWS_SESSION_TOKEN="$aws_session_token"
+else
+    echo "AWS credentials file not found. Exiting."
+    exit 1
+fi
+
 # Main function to orchestrate the script
 main() {
     echo "Welcome to the VM provisioning tool. Please follow the prompts."
@@ -70,3 +85,5 @@ main() {
 
 # Run the main function
 main
+
+d00468971@ssh:
