@@ -1,83 +1,63 @@
-#!/bin/bash
-
-# Enable strict mode
-set -euo pipefail
-
-# Function to prompt for user input
-prompt_for_input() {
-    read -p "$1" input
-    echo "$input"
-}
-
-# Function to SSH into the machine and run the VM creation command
-ssh_and_create_vm() {
-    username=$(prompt_for_input "Enter the SSH username for 'desdemona': ")
-    password=$(prompt_for_input "Enter the SSH password: ")
-    vm_user=$(prompt_for_input "Enter the username for the virtual machine: ")
-    ram=$(prompt_for_input "Enter RAM size in MBytes for the VM: ")
-    disk=$(prompt_for_input "Enter Disk size in GBytes for the VM: ")
-    vlan=$(prompt_for_input "Enter VLAN number for the VM: ")
-    cpu=$(prompt_for_input "Enter CPU count for the VM: ")
-
-    echo "Connecting to 'desdemona' and executing VM creation command..."
-    sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username@desdemona" \
-    "/qemu/bin/citv createvm $vm_user $ram $disk $vlan $cpu"
-}
-
-# Function to deploy cloud infrastructure using Terraform
-deploy_cloud_infrastructure() {
-    echo "Deploying cloud infrastructure with Terraform..."
-    terraform init
-    terraform apply -auto-approve
-}
-
-# Main function to orchestrate the script
-main() {
-    echo "Welcome to the VM provisioning tool. Please follow the prompts."
-    choice=$(prompt_for_input "Choose the environment (on-premises/cloud): ")
-
-    case "$choice" in
-        "on-premises")
-            ssh_and_create_vm
-            ;;
-        "cloud")
-            deploy_cloud_infrastructure
-            ;;
-        *)
-            echo "Invalid choice. Exiting."
-            exit 1
-            ;;
-    esac
-}
-
-# Run the main function
-main
-
-d00468971@ssh:~/it3110-bash-stuff-Pretzelmaster-byte/week4$ cat main.tf
 provider "aws" {
-  region = "us-east-1" # Adjust as needed
+  region = "us-east-1"
 }
 
-resource "aws_vpc" "tf_vpc" {
+variable "developer_name" {
+  description = "List of developer names to create resources for"
+  type        = string
+}
+
+variable "tech_stack" {
+  description = "Technology stack for the provisioned resources (php or nodejs)"
+  type        = string
+}
+
+
+resource "aws_vpc" "tf-vpc" {
   cidr_block = "10.0.0.0/16"
+  enable_dns_support = true
+  enable_dns_hostnames = true
   tags = {
     Name = "tf-vpc"
   }
 }
 
-resource "aws_subnet" "tf_subnet" {
-  vpc_id            = aws_vpc.tf_vpc.id
-  cidr_block        = "10.0.1.0/24"
+resource "aws_subnet" "tf-subnet" {
+  vpc_id     = aws_vpc.tf-vpc.id
+  cidr_block = "10.0.1.0/24"
   map_public_ip_on_launch = true
   tags = {
-    Name = "Instance-${count.index}"
+    Name = "tf-subnet"
   }
 }
 
-resource "aws_security_group" "tf_sg" {
-  name        = "tf_sg"
-  description = "Allow HTTP and SSH inbound traffic"
-  vpc_id      = aws_vpc.tf_vpc.id
+resource "aws_internet_gateway" "tf-ig" {
+  vpc_id = aws_vpc.tf-vpc.id
+  tags = {
+    Name = "tf-ig"
+  }
+}
+
+resource "aws_route_table" "tf-r" {
+  vpc_id = aws_vpc.tf-vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.tf-ig.id
+  }
+
+  tags = {
+    Name = "tf-r"
+  }
+}
+
+resource "aws_route_table_association" "tf-r-assoc" {
+  subnet_id      = aws_subnet.tf-subnet.id
+  route_table_id = aws_route_table.tf-r.id
+}
+
+resource "aws_security_group" "tf-sg" {
+  vpc_id = aws_vpc.tf-vpc.id
 
   ingress {
     from_port   = 22
@@ -93,6 +73,13 @@ resource "aws_security_group" "tf_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -101,68 +88,163 @@ resource "aws_security_group" "tf_sg" {
   }
 
   tags = {
-    Name = "tf_sg"
+    Name = "tf-sg"
   }
 }
 
-resource "aws_internet_gateway" "tf_ig" {
-  vpc_id = aws_vpc.tf_vpc.id
+variable "public_key" {
+  default = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtzAsza9CHf+87LIEY971bfVHAjxyBNlIRc+aZ1eLlZzATHzbahFCwSln0+PkyeZlaXYoy3xeqQiJsgzHYlxrQfxK0D4wn5Yj5PmCYfWKjPcIHnidk9fATS5d28e/w4hpmkBb7W88hgnDxOpETR9zss0VCpwMstCpQ1LIcvnjCUPPqoHggxeMs41kFKX0J/4dQe9pQHBkw859CrepBifouImT291LHUvaNBGwBCWHpKuFSJrwmp3mqQfU/B6dXIq9d/ghPoFqpMyQXq//7SIy5+mpvkthBsRl7cTc03ekIMn0a2nVO2JH0IRAS65lmAeMuJxY7aDKanWz6NaHW1km9 d00468971@desdemona"
+}
+
+resource "aws_key_pair" "tf-key" {
+  key_name   = "tf-key-2"
+  public_key = var.public_key
+}
+
+resource "aws_instance" "user_instance" {
+  for_each = toset([format("%s-%s", var.developer_name, var.tech_stack)])
+
+  ami                          = "ami-080e1f13689e07408"
+  instance_type                = "t2.micro"
+  associate_public_ip_address  = true
+  key_name                     = aws_key_pair.tf-key.key_name
+  subnet_id                    = aws_subnet.tf-subnet.id
+  vpc_security_group_ids       = [aws_security_group.tf-sg.id]
   tags = {
-    Name = "tf_ig"
+    Name = each.value
   }
 }
 
-resource "aws_route_table" "tf_rt" {
-  vpc_id = aws_vpc.tf_vpc.id
+
+output "instance_ips" {
+  value = {for instance in aws_instance.user_instance : instance.tags.Name => instance.public_ip}
+  description = "Public IP addresses for each instance."
+}
+d00468971@ssh:~/it3110-bash-stuff-Pretzelmaster-byte/week4$ ls
+assignment2.sh  assignment4.sh  attempt2.sh  attempt4.sh  dhcp.txt  main.tf               students.txt       terraform.tfstate
+assignment3.sh  assignment.sh   attempt3.sh  attempt.sh   getin.sh  revised_students.txt  template_week3.sh  terraform.tfstate.backup
+d00468971@ssh:~/it3110-bash-stuff-Pretzelmaster-byte/week4$ cat main
+cat: main: No such file or directory
+d00468971@ssh:~/it3110-bash-stuff-Pretzelmaster-byte/week4$ cat main.tf
+provider "aws" {
+  region = "us-east-1"
+}
+
+variable "developer_name" {
+  description = "List of developer names to create resources for"
+  type        = string
+}
+
+variable "tech_stack" {
+  description = "Technology stack for the provisioned resources (php or nodejs)"
+  type        = string
+}
+
+
+resource "aws_vpc" "tf-vpc" {
+  cidr_block = "10.0.0.0/16"
+  enable_dns_support = true
+  enable_dns_hostnames = true
+  tags = {
+    Name = "tf-vpc"
+  }
+}
+
+resource "aws_subnet" "tf-subnet" {
+  vpc_id     = aws_vpc.tf-vpc.id
+  cidr_block = "10.0.1.0/24"
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "tf-subnet"
+  }
+}
+
+resource "aws_internet_gateway" "tf-ig" {
+  vpc_id = aws_vpc.tf-vpc.id
+  tags = {
+    Name = "tf-ig"
+  }
+}
+
+resource "aws_route_table" "tf-r" {
+  vpc_id = aws_vpc.tf-vpc.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.tf_ig.id
+    gateway_id = aws_internet_gateway.tf-ig.id
   }
 
   tags = {
-    Name = "tf_rt"
+    Name = "tf-r"
   }
 }
 
-resource "aws_route_table_association" "tf_rta" {
-  subnet_id      = aws_subnet.tf_subnet.id
-  route_table_id = aws_route_table.tf_rt.id
+resource "aws_route_table_association" "tf-r-assoc" {
+  subnet_id      = aws_subnet.tf-subnet.id
+  route_table_id = aws_route_table.tf-r.id
 }
 
-resource "aws_key_pair" "tf_key" {
-  key_name   = "terr-key"
-  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC8NGaey9qYzCQ5fN5oqdChcQx9cCCPMVw93JwM7P7EQFXlPQrRg78miQPdft0bhPJPMfudzv0DFM3WC43W4iE1ezh1gpto+R53r+gFTUubLKGtetrpqdjLpUONc1z+1Qvnh9aRkn8WnOt9uZKDh0QLaFO7sPmBDV2URq1JI6f5Voz6VyTwIaek2jNkP9lEj73Ffiuj6Z5TYpMv5ZhYky3RUviozVnaDpFKTba3VRoRZOuPP31Ze0Rn7J/OafhpVpy9Qbjg0hjDTQq4U873Ycfnwr5RijyDb3N+oiEwWYEJ04z0NMlEba1DT2xuDV9DF+klAQvzlRzUng9lS5EUQmOswHXhHgxFVEfldOHeWONmIXiQt1rbusugDInFWyDVEcHY5GOsP09KIrsvrjNNCufbKYO8zuqq06amiFxYyyH3fW3SibK80e6C+/4SscMjkBzIG9z5Z5s7vHP70t76/dw7bn8s002RpWZYGoRAj5s4rxiKnUIdOrL1e4V05pdc7PM= pryce@dhcp"
-}
+resource "aws_security_group" "tf-sg" {
+  vpc_id = aws_vpc.tf-vpc.id
 
-resource "aws_instance" "instance" {
-  count = 3
-  ami           = "ami-07d9b9ddc6cd8dd30" # Update with the specific AMI for your region
-  instance_type = "t2.micro"
-  key_name      = aws_key_pair.tf_key.key_name
-  vpc_security_group_ids = [aws_security_group.tf_sg.id]
-  subnet_id = aws_subnet.tf_subnet.id
-  associate_public_ip_address = true
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-  user_data = <<-EOF
-                #!/bin/bash
-                echo "Hello from \${count.index}" > /var/www/html/index.html
-                nohup busybox httpd -f -p 80 &
-                EOF
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = {
-    Name = "Instance-\${count.index}"
+    Name = "tf-sg"
   }
 }
 
-output "dev_ip" {
-  value = aws_instance.instance[0].public_ip
+variable "public_key" {
+  default = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtzAsza9CHf+87LIEY971bfVHAjxyBNlIRc+aZ1eLlZzATHzbahFCwSln0+PkyeZlaXYoy3xeqQiJsgzHYlxrQfxK0D4wn5Yj5PmCYfWKjPcIHnidk9fATS5d28e/w4hpmkBb7W88hgnDxOpETR9zss0VCpwMstCpQ1LIcvnjCUPPqoHggxeMs41kFKX0J/4dQe9pQHBkw859CrepBifouImT291LHUvaNBGwBCWHpKuFSJrwmp3mqQfU/B6dXIq9d/ghPoFqpMyQXq//7SIy5+mpvkthBsRl7cTc03ekIMn0a2nVO2JH0IRAS65lmAeMuJxY7aDKanWz6NaHW1km9 d00468971@desdemona"
 }
 
-output "test_ip" {
-  value = aws_instance.instance[1].public_ip
+resource "aws_key_pair" "tf-key" {
+  key_name   = "tf-key-2"
+  public_key = var.public_key
 }
 
-output "prod_ip" {
-  value = aws_instance.instance[2].public_ip
+resource "aws_instance" "user_instance" {
+  for_each = toset([format("%s-%s", var.developer_name, var.tech_stack)])
+
+  ami                          = "ami-080e1f13689e07408"
+  instance_type                = "t2.micro"
+  associate_public_ip_address  = true
+  key_name                     = aws_key_pair.tf-key.key_name
+  subnet_id                    = aws_subnet.tf-subnet.id
+  vpc_security_group_ids       = [aws_security_group.tf-sg.id]
+  tags = {
+    Name = each.value
+  }
+}
+
+
+output "instance_ips" {
+  value = {for instance in aws_instance.user_instance : instance.tags.Name => instance.public_ip}
+  description = "Public IP addresses for each instance."
 }
